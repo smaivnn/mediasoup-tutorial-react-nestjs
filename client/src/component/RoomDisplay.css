@@ -1,0 +1,16 @@
+.room-container {
+  width: 50%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px auto;
+}
+
+.room-id {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.room-user {
+  font-weight: bold;
+}
