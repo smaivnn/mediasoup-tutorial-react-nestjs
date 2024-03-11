@@ -6,7 +6,7 @@ function useVoiceSocket() {
   const url = "http://localhost:5000";
   let socket = useRef();
 
-  const { setRoomId, setRooms } = MediaStore();
+  const { setRoomId, setRooms, removeRoomId } = MediaStore();
 
   const connectSocket = async () => {
     try {
@@ -33,6 +33,7 @@ function useVoiceSocket() {
   };
 
   const leaveRoom = () => {
+    removeRoomId();
     socket.current.emit("leave-room");
   };
 
