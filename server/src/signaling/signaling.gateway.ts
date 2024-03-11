@@ -11,6 +11,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JoinChannelDto } from './dto/join-channel.dto';
 import { rooms } from '../common/mock/mock';
+import { SocketRoomMap } from '../types/maps/socketRoomMap';
 
 @WebSocketGateway({
   cors: {
@@ -23,7 +24,7 @@ export class SignalingGateway
 {
   constructor() {}
 
-  private userStatus: Map<string, string> = new Map();
+  private socketRoomMap: SocketRoomMap = new Map();
 
   @WebSocketServer()
   server: Server;
@@ -37,9 +38,9 @@ export class SignalingGateway
   }
 
   async handleDisconnect(client: Socket) {
-    const roomId = this.userStatus.get(client.id);
+    const roomId = this.socketRoomMap.get(client.id);
     if (roomId) {
-      this.userStatus.delete(client.id);
+      this.socketRoomMap.delete(client.id);
       this.removeSocketIdFromRoom(roomId, client.id);
       this.server.emit('status-change', { rooms });
     }
@@ -53,16 +54,16 @@ export class SignalingGateway
   ) {
     const { roomId } = dto;
     client.join(roomId);
-    this.userStatus.set(client.id, roomId);
+    this.socketRoomMap.set(client.id, roomId);
     this.addSocketIdToRoom(roomId, client.id);
     this.server.emit('status-change', { rooms });
   }
 
   @SubscribeMessage('leave-room')
   handleLeaveChannel(@ConnectedSocket() client: Socket) {
-    const roomId = this.userStatus.get(client.id);
+    const roomId = this.socketRoomMap.get(client.id);
     if (roomId) {
-      this.userStatus.delete(client.id);
+      this.socketRoomMap.delete(client.id);
       this.removeSocketIdFromRoom(roomId, client.id);
       this.server.emit('status-change', { rooms });
     }
