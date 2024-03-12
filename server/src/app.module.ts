@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SignalingGateway } from './signaling/signaling.gateway';
+import { MediasoupService } from './mediasoup/mediasoup.service';
 
 @Module({
   imports: [
@@ -13,6 +14,6 @@ import { SignalingGateway } from './signaling/signaling.gateway';
     HttpModule,
   ],
   controllers: [AppController],
-  providers: [AppService, SignalingGateway],
+  providers: [AppService, SignalingGateway, MediasoupService],
 })
 export class AppModule {}

@@ -18,6 +18,10 @@ const RoomInput = ({ joinRoom, leaveRoom }) => {
     if (!confirm) {
       return;
     }
+    if(roomId) {
+      alert("이미 방에 참여중입니다.");
+      return;
+    }
     joinRoom(inputRef.current.value);
   };
 

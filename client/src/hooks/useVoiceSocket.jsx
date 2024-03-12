@@ -1,17 +1,20 @@
 import { useRef } from "react";
 import { io } from "socket.io-client";
 import MediaStore from "../store/MediaStore";
+import useMediasoup from "./useMediasoup";
 
 function useVoiceSocket() {
   const url = "http://localhost:5000";
   let socket = useRef();
 
-  const { setRoomId, setRooms, removeRoomId } = MediaStore();
+  const { setSocket, setRoomId, setRooms, removeRoomId } = MediaStore();
+  const { getLocalAudioStream } = useMediasoup();
 
   const connectSocket = async () => {
     try {
       socket.current = io(url);
       addEvent();
+      setSocket(socket.current);
     } catch (error) {
       console.error("소켓 연결에 실패했습니다:", error);
     }
@@ -30,6 +33,7 @@ function useVoiceSocket() {
   const joinRoom = (roomId) => {
     setRoomId(roomId);
     socket.current.emit("join-room", { roomId });
+    getLocalAudioStream();
   };
 
   const leaveRoom = () => {

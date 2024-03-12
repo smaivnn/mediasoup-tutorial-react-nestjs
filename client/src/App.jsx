@@ -5,6 +5,7 @@ import RoomInput from "./component/RoomInput";
 import RoomDisplay from "./component/RoomDisplay";
 import useVoiceSocket from "./hooks/useVoiceSocket";
 import MediaStore from "./store/MediaStore";
+import VideoBtnContainer from "./component/VideoBtnContainer";
 
 function App() {
   const { setRooms } = MediaStore();
@@ -30,8 +31,7 @@ function App() {
         <RoomDisplay />
       </section>
       <section className="App-main">
-        {/* 비디오를 나타낸다.*/}
-        {/* show video */}
+        <VideoBtnContainer />
       </section>
     </body>
   );
