@@ -6,6 +6,9 @@ import RoomDisplay from "./component/RoomDisplay";
 import useVoiceSocket from "./hooks/useVoiceSocket";
 import MediaStore from "./store/MediaStore";
 import VideoBtnContainer from "./component/VideoBtnContainer";
+import Audio from "./component/Audio";
+import MyVideoBox from "./component/MyVideoBox";
+import PeerVideoBox from "./component/PeerVideoBox";
 
 function App() {
   const { setRooms } = MediaStore();
@@ -32,6 +35,9 @@ function App() {
       </section>
       <section className="App-main">
         <VideoBtnContainer />
+        <Audio />
+        <MyVideoBox />
+        <PeerVideoBox />
       </section>
     </body>
   );

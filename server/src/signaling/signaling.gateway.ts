@@ -136,14 +136,156 @@ export class SignalingGateway
     const producer = await transport.produce({ kind, rtpParameters });
     this.mediasoupService.setProducer(client.id, mediaTag, producer);
 
-    // 방에 사람이 있는지 전달한다.
     const roomId = this.socketRoomMap.get(client.id);
-    const existProducerObj = this.mediasoupService.getExistProducers(
+    const existUserObj = this.mediasoupService.getExistProducers(
       roomId,
       client.id,
     );
 
-    return { producerId: producer.id, existProducerObj };
+    client.broadcast.to(roomId).emit('new-producer', {
+      produceSocket: client.id,
+      mediaTag,
+    });
+
+    return { producerId: producer.id, existUserObj };
+  }
+
+  @SubscribeMessage('consume-all')
+  async handleConsumeAll(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const { rtpCapabilities, produceSocketId } = data;
+      const roomId = this.socketRoomMap.get(client.id);
+      const router = await this.mediasoupService.getRouter(roomId);
+      const transport = await this.mediasoupService.getTransport(
+        true,
+        client.id,
+        produceSocketId,
+      );
+      let paramsArray = [];
+      const producers = this.mediasoupService.getProducers(produceSocketId);
+      for (let mediaTag in producers) {
+        if (producers[mediaTag] !== undefined) {
+          if (
+            router.canConsume({
+              producerId: producers[mediaTag].id,
+              rtpCapabilities,
+            })
+          ) {
+            try {
+              console.log(`consume run ${mediaTag}`);
+              const consumer = await transport.consume({
+                producerId: producers[mediaTag].id,
+                rtpCapabilities,
+                paused: true,
+              });
+              console.log('consumer created : ', consumer.id);
+              this.mediasoupService.setConsumer(
+                client.id,
+                produceSocketId,
+                mediaTag,
+                consumer,
+              );
+
+              const params = {
+                id: consumer.id,
+                producerId: producers[mediaTag].id,
+                produceSocketId: produceSocketId,
+                kind: consumer.kind,
+                rtpParameters: consumer.rtpParameters,
+              };
+              await consumer.resume();
+
+              paramsArray.push({ params });
+            } catch (error) {
+              console.error('Error creating consumer: ', error);
+            }
+          }
+        }
+      }
+      return { paramsArray };
+    } catch (error) {}
+  }
+  //
+  @SubscribeMessage('consume-single')
+  async handleConsume(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { rtpCapabilities, produceSocketId, mediaTag } = data;
+    const roomId = this.socketRoomMap.get(client.id);
+    const router = await this.mediasoupService.getRouter(roomId);
+    const transport = await this.mediasoupService.getTransport(
+      true,
+      client.id,
+      produceSocketId,
+    );
+
+    const producer = this.mediasoupService.getProducer(
+      produceSocketId,
+      mediaTag,
+    );
+
+    if (
+      router.canConsume({
+        producerId: producer.id,
+        rtpCapabilities,
+      })
+    ) {
+      const consumer = await transport.consume({
+        producerId: producer.id,
+        rtpCapabilities,
+        paused: true,
+      });
+
+      console.log(mediaTag, 'consumer created : ', consumer.id);
+      this.mediasoupService.setConsumer(
+        client.id,
+        produceSocketId,
+        mediaTag,
+        consumer,
+      );
+      let paramsArray = [];
+      const params = {
+        id: consumer.id,
+        producerId: producer.id,
+        produceSocketId,
+        kind: consumer.kind,
+        rtpParameters: consumer.rtpParameters,
+      };
+      await consumer.resume();
+      paramsArray.push({ params });
+      return { paramsArray };
+    }
+  }
+
+  @SubscribeMessage('new-video-producer')
+  async handleNewVideoProducer(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const roomId = this.socketRoomMap.get(client.id);
+    const { mediaTag } = data;
+    client.broadcast
+      .to(roomId)
+      .emit('new-producer', { produceSocket: client.id, mediaTag });
+  }
+  //
+  @SubscribeMessage('recv-connect')
+  async handleRecvConnect(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { dtlsParameters, isConsumer, produceSocketId } = data;
+    const transport = this.mediasoupService.getTransport(
+      isConsumer,
+      client.id,
+      produceSocketId,
+    );
+    await transport.connect({ dtlsParameters });
+    console.log('recv transport connected');
   }
 
   addSocketIdToRoom(roomId: string, socketId: string) {

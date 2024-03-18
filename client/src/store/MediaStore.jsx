@@ -28,6 +28,22 @@ const MediaStore = create((set) => ({
   sendTransport: null,
   setSendTransport: (sendTransport) => set({ sendTransport }),
   removeSendTransport: () => set({ sendTransport: null }),
+
+  recvTransport: new Map(),
+  setRecvTransport: (socketId, transport) =>
+    set((state) => {
+      const newRecvTransport = new Map(state.recvTransport);
+      newRecvTransport.set(socketId, transport);
+      console.log(newRecvTransport);
+      return { recvTransport: newRecvTransport };
+    }),
+  removeRecvTransport: (socketId) =>
+    set((state) => {
+      const newRecvTransport = new Map(state.recvTransport);
+      newRecvTransport.delete(socketId);
+      return { recvTransport: newRecvTransport };
+    }),
+  getRecvTransport: (socketId) => (state) => state.recvTransport.get(socketId),
 }));
 
 export default MediaStore;

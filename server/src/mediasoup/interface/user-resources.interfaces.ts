@@ -11,12 +11,16 @@ export interface IProducerInfo {
   display?: mediasoup.types.Producer;
 }
 
-export interface IConsumerInfo {}
+export interface IConsumerInfo {
+  audio?: mediasoup.types.Producer;
+  camera?: mediasoup.types.Producer;
+  display?: mediasoup.types.Producer;
+}
 
 export interface IMediaResources {
   transports?: ITransportInfo;
   producers?: IProducerInfo;
-  consumers?: IConsumerInfo;
+  consumers?: Map<string, IConsumerInfo>;
 }
 
 export type IMediaResourcesMap = Map<string, IMediaResources>;

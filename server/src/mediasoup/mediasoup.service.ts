@@ -62,11 +62,7 @@ export class MediasoupService implements OnModuleInit {
         camera: undefined,
         display: undefined,
       },
-      consumers: {
-        audio: undefined,
-        camera: undefined,
-        display: undefined,
-      },
+      consumers: new Map<string, IConsumerInfo>(),
     };
 
     this.userMediaResources.set(socketId, mediaResources);
@@ -96,14 +92,17 @@ export class MediasoupService implements OnModuleInit {
     data: ITransportData,
   ): Promise<mediasoup.types.WebRtcTransport> {
     try {
-      const { roomId, isConsumer, socketId } = data;
+      const { roomId, isConsumer, socketId, produceSocketId } = data;
       const router = await this.getRouter(roomId);
       const transport = await router.createWebRtcTransport(
         webRtcTransport_options,
       );
-      this.setTransport(isConsumer, socketId, transport);
+      this.setTransport(isConsumer, socketId, transport, produceSocketId);
 
-      console.log('>> transport created for room', roomId);
+      isConsumer === true
+        ? console.log('>> recv transport created for room', roomId)
+        : console.log('>> send transport created for room', roomId);
+
       return transport;
     } catch (error) {
       console.error(error);
@@ -114,19 +113,23 @@ export class MediasoupService implements OnModuleInit {
     isConsumer: boolean,
     socketId: string,
     transport: mediasoup.types.WebRtcTransport,
+    produceSocketId: string | null,
   ) {
     const mediaResources = this.userMediaResources.get(socketId);
     if (isConsumer) {
-      // mediaResources.transports.recvTransport.set(socketId, undefined);
+      mediaResources.transports.recvTransport.set(produceSocketId, transport);
     }
     mediaResources.transports.sendTransport = transport;
   }
 
-  getTransport(isConsumer: boolean, socketId: string) {
+  getTransport(
+    isConsumer: boolean,
+    socketId: string,
+    produceSocketId: string | null = null,
+  ) {
     const mediaResources = this.userMediaResources.get(socketId);
     if (isConsumer) {
-      // return mediaResources.transports.recvTransport
-      return;
+      return mediaResources.transports.recvTransport.get(produceSocketId);
     }
     return mediaResources.transports.sendTransport;
   }
@@ -138,6 +141,55 @@ export class MediasoupService implements OnModuleInit {
   ) {
     const mediaResources = this.userMediaResources.get(socketId);
     mediaResources.producers[mediaTag] = producer;
+    console.log(
+      producer.id,
+      '>> producer created for',
+      mediaTag,
+      'by',
+      socketId,
+    );
+  }
+
+  getProducer(socketId: string, mediaTag: string) {
+    const mediaResources = this.userMediaResources.get(socketId);
+    console.log(
+      mediaResources.producers[mediaTag].id,
+      '>> get producer for',
+      mediaTag,
+      'by',
+      socketId,
+    );
+    return mediaResources.producers[mediaTag];
+  }
+
+  getProducers(socketId: string) {
+    const mediaResources = this.userMediaResources.get(socketId);
+    return mediaResources.producers;
+  }
+
+  setConsumer(
+    socketId: string,
+    produceSocketId: string,
+    mediaTag: string,
+    consumer: mediasoup.types.Consumer,
+  ) {
+    const mediaResources = this.userMediaResources.get(socketId);
+    let consumerInfo = mediaResources.consumers.get(produceSocketId);
+    if (!consumerInfo) {
+      consumerInfo = {};
+    }
+    consumerInfo[mediaTag] = consumer;
+    mediaResources.consumers.set(produceSocketId, consumerInfo);
+  }
+
+  getConsumer(
+    socketId: string,
+    produceSocketId: string,
+    mediaTag: string,
+  ): mediasoup.types.Consumer {
+    const mediaResources = this.userMediaResources.get(socketId);
+    const consumerInfo = mediaResources.consumers.get(produceSocketId);
+    return consumerInfo[mediaTag];
   }
 
   setUserInRoom(roomId: string, socketId: string) {
@@ -148,17 +200,6 @@ export class MediasoupService implements OnModuleInit {
     const userIds = this.rooms.get(roomId).users;
     const filteredUserIds = Array.from(userIds).filter((id) => id !== socketId);
 
-    const prodcuerIds = filteredUserIds.map((id) => {
-      const userMedia = this.userMediaResources.get(id);
-      return {
-        [id]: {
-          audio: userMedia.producers.audio?.id,
-          camera: userMedia.producers.camera?.id,
-          display: userMedia.producers.display?.id,
-        },
-      };
-    });
-
-    return Object.assign({}, ...prodcuerIds);
+    return filteredUserIds;
   }
 }

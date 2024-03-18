@@ -4,6 +4,7 @@ export interface ITransportData {
   isConsumer?: boolean;
   roomId?: string;
   socketId?: string;
+  produceSocketId?: string;
 }
 
 export interface TransportConnectData {

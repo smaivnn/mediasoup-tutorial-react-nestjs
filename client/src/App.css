@@ -2,3 +2,16 @@
   text-align: center;
   align-items: center;
 }
+
+.video-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20px;
+}
+
+video {
+  width: 480px;
+  height: 360px;
+  border: 1px solid #000;
+}
