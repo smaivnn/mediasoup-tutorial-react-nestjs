@@ -2,14 +2,11 @@ import { ITransportData } from './interface/media-resources.interfaces';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { mediaCodecs, webRtcTransport_options } from './media.config';
 import {
-  ITransportInfo,
-  IProducerInfo,
   IConsumerInfo,
   IMediaResources,
   IMediaResourcesMap,
   IRoom,
 } from './interface/user-resources.interfaces';
-
 import * as mediasoup from 'mediasoup';
 import * as os from 'os';
 
@@ -22,9 +19,11 @@ export class MediasoupService implements OnModuleInit {
 
   constructor() {}
 
+  /**
+   * create mediasoup workers on module init
+   */
   async onModuleInit() {
     const numWorkers = os.cpus().length;
-
     for (let i = 0; i < numWorkers; ++i) {
       await this.createWorker();
     }
@@ -85,6 +84,7 @@ export class MediasoupService implements OnModuleInit {
     if (!router) {
       router = await this.createRouter(roomId);
     }
+    console.log('>> router retrieved for room', roomId);
     return router;
   }
 
@@ -93,15 +93,12 @@ export class MediasoupService implements OnModuleInit {
   ): Promise<mediasoup.types.WebRtcTransport> {
     try {
       const { roomId, isConsumer, socketId, produceSocketId } = data;
+
       const router = await this.getRouter(roomId);
       const transport = await router.createWebRtcTransport(
         webRtcTransport_options,
       );
       this.setTransport(isConsumer, socketId, transport, produceSocketId);
-
-      isConsumer === true
-        ? console.log('>> recv transport created for room', roomId)
-        : console.log('>> send transport created for room', roomId);
 
       return transport;
     } catch (error) {
@@ -141,24 +138,10 @@ export class MediasoupService implements OnModuleInit {
   ) {
     const mediaResources = this.userMediaResources.get(socketId);
     mediaResources.producers[mediaTag] = producer;
-    console.log(
-      producer.id,
-      '>> producer created for',
-      mediaTag,
-      'by',
-      socketId,
-    );
   }
 
   getProducer(socketId: string, mediaTag: string) {
     const mediaResources = this.userMediaResources.get(socketId);
-    console.log(
-      mediaResources.producers[mediaTag].id,
-      '>> get producer for',
-      mediaTag,
-      'by',
-      socketId,
-    );
     return mediaResources.producers[mediaTag];
   }
 

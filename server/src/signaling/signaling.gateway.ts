@@ -77,7 +77,7 @@ export class SignalingGateway
   }
 
   @SubscribeMessage('create-router')
-  async hanldeRTPcapabilities(
+  async handleRTPCapabilities(
     @MessageBody() roomId: string,
   ): Promise<mediasoup.types.RtpCapabilities> {
     const router: mediasoup.types.Router =
@@ -96,6 +96,7 @@ export class SignalingGateway
       return;
     }
     const newData = { ...data, socketId: client.id };
+    console.log('newData', newData);
     const transport =
       await this.mediasoupService.createWebRtcTransport(newData);
     const transportParams = {
@@ -175,13 +176,11 @@ export class SignalingGateway
             })
           ) {
             try {
-              console.log(`consume run ${mediaTag}`);
               const consumer = await transport.consume({
                 producerId: producers[mediaTag].id,
                 rtpCapabilities,
                 paused: true,
               });
-              console.log('consumer created : ', consumer.id);
               this.mediasoupService.setConsumer(
                 client.id,
                 produceSocketId,
@@ -196,7 +195,6 @@ export class SignalingGateway
                 kind: consumer.kind,
                 rtpParameters: consumer.rtpParameters,
               };
-              await consumer.resume();
 
               paramsArray.push({ params });
             } catch (error) {
@@ -208,7 +206,7 @@ export class SignalingGateway
       return { paramsArray };
     } catch (error) {}
   }
-  //
+
   @SubscribeMessage('consume-single')
   async handleConsume(
     @MessageBody() data: any,
@@ -216,13 +214,14 @@ export class SignalingGateway
   ) {
     const { rtpCapabilities, produceSocketId, mediaTag } = data;
     const roomId = this.socketRoomMap.get(client.id);
+
     const router = await this.mediasoupService.getRouter(roomId);
-    const transport = await this.mediasoupService.getTransport(
+    const transport = this.mediasoupService.getTransport(
       true,
       client.id,
       produceSocketId,
     );
-
+    let paramsArray = [];
     const producer = this.mediasoupService.getProducer(
       produceSocketId,
       mediaTag,
@@ -234,30 +233,32 @@ export class SignalingGateway
         rtpCapabilities,
       })
     ) {
-      const consumer = await transport.consume({
-        producerId: producer.id,
-        rtpCapabilities,
-        paused: true,
-      });
+      try {
+        const consumer = await transport.consume({
+          producerId: producer.id,
+          rtpCapabilities,
+          paused: true,
+        });
+        this.mediasoupService.setConsumer(
+          client.id,
+          produceSocketId,
+          mediaTag,
+          consumer,
+        );
 
-      console.log(mediaTag, 'consumer created : ', consumer.id);
-      this.mediasoupService.setConsumer(
-        client.id,
-        produceSocketId,
-        mediaTag,
-        consumer,
-      );
-      let paramsArray = [];
-      const params = {
-        id: consumer.id,
-        producerId: producer.id,
-        produceSocketId,
-        kind: consumer.kind,
-        rtpParameters: consumer.rtpParameters,
-      };
-      await consumer.resume();
-      paramsArray.push({ params });
-      return { paramsArray };
+        const params = {
+          id: consumer.id,
+          producerId: producer.id,
+          produceSocketId: produceSocketId,
+          kind: consumer.kind,
+          rtpParameters: consumer.rtpParameters,
+        };
+
+        paramsArray.push({ params });
+        return { paramsArray };
+      } catch (error) {
+        console.error(error);
+      }
     }
   }
 
@@ -272,7 +273,7 @@ export class SignalingGateway
       .to(roomId)
       .emit('new-producer', { produceSocket: client.id, mediaTag });
   }
-  //
+
   @SubscribeMessage('recv-connect')
   async handleRecvConnect(
     @MessageBody() data: any,
@@ -286,6 +287,22 @@ export class SignalingGateway
     );
     await transport.connect({ dtlsParameters });
     console.log('recv transport connected');
+  }
+
+  @SubscribeMessage('consumer-resume')
+  async handleConsumerResume(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { produceSocketId, mediaTag } = data;
+    console.log(client.id, produceSocketId, mediaTag);
+    const consumer = await this.mediasoupService.getConsumer(
+      client.id,
+      produceSocketId,
+      mediaTag,
+    );
+
+    await consumer.resume();
   }
 
   addSocketIdToRoom(roomId: string, socketId: string) {

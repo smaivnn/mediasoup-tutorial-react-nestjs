@@ -8,8 +8,7 @@ function useVoiceSocket() {
   let socket = useRef();
 
   const { setSocket, setRoomId, setRooms, removeRoomId } = MediaStore();
-  const { getLocalAudioStream, setPeerVideoStream, consumeSingleUser } =
-    useMediasoup();
+  const { getLocalAudioStream, consumeSingleUser } = useMediasoup();
 
   const connectSocket = async () => {
     try {

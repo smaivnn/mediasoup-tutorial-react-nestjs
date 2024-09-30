@@ -26,6 +26,7 @@ function useMediasoup() {
   const audioStreamSuccess = (stream, type) => {
     let audioParams = { track: stream.getAudioTracks()[0], type };
     setAudioParams(audioParams);
+    console.log("audioParams 생성", audioParams);
     getRtpCapabilities();
   };
 
@@ -75,7 +76,7 @@ function useMediasoup() {
 
   const getRtpCapabilities = () => {
     const { roomId } = MediaStore.getState();
-    console.log(`${roomId} 라우터를 만듭니다.`);
+    console.log(`라우터 생성. ${roomId} `);
     try {
       media_socket.emit("create-router", roomId, (rtpCapabilities) => {
         createDevice(rtpCapabilities);
@@ -89,7 +90,7 @@ function useMediasoup() {
     try {
       let device = new MediasoupClient.Device();
       setDevice(device);
-      console.log("디바이스를 만듭니다.");
+      console.log("디바이스 생성");
       await device.load({
         routerRtpCapabilities: rtpCapabilities,
       });
@@ -104,6 +105,7 @@ function useMediasoup() {
 
   const createSendTransport = () => {
     const { roomId, device } = MediaStore.getState();
+    console.log("sendTransport 생성 roomId: ", roomId);
     media_socket.emit(
       "create-webRTC-transport",
       {
@@ -117,22 +119,26 @@ function useMediasoup() {
         }
 
         const sendTransport = device.createSendTransport(transportParams);
-
-        sendTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
-          try {
-            media_socket.emit("transport-connect", {
-              dtlsParameters,
-              isConsumer: false,
-            });
-            callback();
-          } catch (error) {
-            errback(error);
+        console.log("sendTransport", sendTransport.id, "생성됨");
+        sendTransport.on(
+          "connect",
+          async ({ dtlsParameters }, callback, errback) => {
+            try {
+              await media_socket.emit("transport-connect", {
+                dtlsParameters,
+                isConsumer: false,
+              });
+              callback();
+            } catch (error) {
+              errback(error);
+            }
           }
-        });
+        );
 
-        sendTransport.on("produce", (parameters, callback, errback) => {
+        sendTransport.on("produce", async (parameters, callback, errback) => {
+          console.log("transport-producer 이벤트 발생, ", parameters);
           try {
-            media_socket.emit(
+            await media_socket.emit(
               "transport-produce",
               {
                 kind: parameters.kind,
@@ -164,7 +170,12 @@ function useMediasoup() {
 
   const connectSendTransport = async (mediaType) => {
     const { audioParams, videoParams, sendTransport } = MediaStore.getState();
-
+    console.log(
+      "connectSendTransport",
+      mediaType,
+      "에 대한 producer 생성, transport아이디 : ",
+      sendTransport.id
+    );
     let Params;
     switch (mediaType) {
       case "audio":
@@ -176,7 +187,7 @@ function useMediasoup() {
       default:
         break;
     }
-    console.log(Params);
+
     const producer = await sendTransport.produce({
       track: Params.track,
       appData: { mediaTag: Params.type },
@@ -187,23 +198,25 @@ function useMediasoup() {
 
   const consumeAllUser = async (socketId) => {
     const recvTransport = await createRecvTransport(socketId);
+    console.log("consumeAllUser", recvTransport.id, "생성됨");
     const consumeEvent = "consume-all";
     connectRecvTransport(consumeEvent, recvTransport, socketId);
   };
 
   const consumeSingleUser = async (socketId, mediaTag) => {
     const recvTransport = getRecvTransport(socketId)(MediaStore.getState())
-      ? getRecvTransport(socketId)(MediaStore.getState())
+      ? await getRecvTransport(socketId)(MediaStore.getState())
       : await createRecvTransport(socketId);
-
+    console.log("consumeSingleUser", recvTransport.id, "가져옴");
     const consumeEvent = "consume-single";
+
     connectRecvTransport(consumeEvent, recvTransport, socketId, mediaTag);
   };
 
   const createRecvTransport = (socketId) => {
     return new Promise((resolve, reject) => {
       const { roomId, device, media_socket } = MediaStore.getState();
-
+      console.log(roomId, "방에 recvTransport 생성");
       try {
         media_socket.emit(
           "create-webRTC-transport",
@@ -266,13 +279,17 @@ function useMediasoup() {
               console.log(params.error);
               return;
             }
+
             const consumer = await recvTransport.consume({
               id: params.id,
               producerId: params.producerId,
               kind: params.kind,
               rtpParameters: params.rtpParameters,
             });
+            consumerResume(produceSocketId, (mediaTag = "audio"));
+
             const { track } = consumer;
+            console.log(track);
             const mediaStream = new MediaStream([track]);
 
             if (params.kind === "audio") {
@@ -286,7 +303,6 @@ function useMediasoup() {
               }));
             }
             if (params.kind === "video") {
-              console.log(consumer.id);
               setPeerVideoStream((prevStreams) => ({
                 ...prevStreams,
                 [params.producerId]: {
@@ -305,11 +321,20 @@ function useMediasoup() {
     }
   };
 
+  const consumerResume = (produceSocketId, mediaTag) => {
+    const { media_socket } = MediaStore.getState();
+    media_socket.emit("consumer-resume", {
+      produceSocketId,
+      mediaTag,
+    });
+  };
+
   return {
     getLocalAudioStream,
     getLocalDisplayStream,
     getLocalCameraStream,
     consumeSingleUser,
+    consumerResume,
   };
 }
 

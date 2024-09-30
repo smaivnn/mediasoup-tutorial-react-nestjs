@@ -34,7 +34,6 @@ const MediaStore = create((set) => ({
     set((state) => {
       const newRecvTransport = new Map(state.recvTransport);
       newRecvTransport.set(socketId, transport);
-      console.log(newRecvTransport);
       return { recvTransport: newRecvTransport };
     }),
   removeRecvTransport: (socketId) =>
