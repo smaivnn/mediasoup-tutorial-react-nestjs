@@ -9,9 +9,4 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
-
-  @Get('room-status')
-  getRoomStatus(): Record<string, string[]> {
-    return this.appService.getRoomStatus();
-  }
 }

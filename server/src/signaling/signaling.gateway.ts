@@ -8,16 +8,11 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import * as mediasoup from 'mediasoup';
 import { Server, Socket } from 'socket.io';
 import { JoinChannelDto } from './dto/join-channel.dto';
-import { rooms } from '../common/mock/mock';
-import { SocketRoomMap } from '../types/maps/socketRoomMap';
-import { MediasoupService } from 'src/mediasoup/mediasoup.service';
-import {
-  ITransportData,
-  TransportConnectData,
-} from 'src/mediasoup/interface/media-resources.interfaces';
+import { RoomService } from 'src/mediasoup/room/room.service';
+import { TransportService } from 'src/mediasoup/transport/transport.service';
+import { ProducerConsumerService } from 'src/mediasoup/producer-consumer/producer-consumer.service';
 
 @WebSocketGateway({
   cors: {
@@ -28,14 +23,16 @@ import {
 export class SignalingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
-  constructor(private readonly mediasoupService: MediasoupService) {}
-
-  private socketRoomMap: SocketRoomMap = new Map();
-
   @WebSocketServer()
   server: Server;
 
-  afterInit(server: Server) {
+  constructor(
+    private readonly roomService: RoomService,
+    private readonly transportService: TransportService,
+    private readonly producerConsumerService: ProducerConsumerService,
+  ) {}
+
+  afterInit() {
     console.log(`Server initialized`);
   }
 
@@ -44,12 +41,6 @@ export class SignalingGateway
   }
 
   async handleDisconnect(client: Socket) {
-    const roomId = this.socketRoomMap.get(client.id);
-    if (roomId) {
-      this.socketRoomMap.delete(client.id);
-      this.removeSocketIdFromRoom(roomId, client.id);
-      this.server.emit('status-change', { rooms });
-    }
     console.log(`Client disconnected: ${client.id}`);
   }
 
@@ -58,267 +49,159 @@ export class SignalingGateway
     @MessageBody() dto: JoinChannelDto,
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId } = dto;
-    client.join(roomId);
-    this.mediasoupService.createUserMediaResources(client.id);
-    this.socketRoomMap.set(client.id, roomId);
-    this.addSocketIdToRoom(roomId, client.id);
-    this.server.emit('status-change', { rooms });
-  }
+    const { roomId, peerId } = dto;
 
-  @SubscribeMessage('leave-room')
-  handleLeaveChannel(@ConnectedSocket() client: Socket) {
-    const roomId = this.socketRoomMap.get(client.id);
-    if (roomId) {
-      this.socketRoomMap.delete(client.id);
-      this.removeSocketIdFromRoom(roomId, client.id);
-      this.server.emit('status-change', { rooms });
-    }
-  }
-
-  @SubscribeMessage('create-router')
-  async handleRTPCapabilities(
-    @MessageBody() roomId: string,
-  ): Promise<mediasoup.types.RtpCapabilities> {
-    const router: mediasoup.types.Router =
-      await this.mediasoupService.getRouter(roomId);
-
-    return router.rtpCapabilities;
-  }
-
-  @SubscribeMessage('create-webRTC-transport')
-  async createTransport(
-    @MessageBody() data: ITransportData,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId } = data;
-    if (!roomId) {
-      return;
-    }
-    const newData = { ...data, socketId: client.id };
-    console.log('newData', newData);
-    const transport =
-      await this.mediasoupService.createWebRtcTransport(newData);
-    const transportParams = {
-      id: transport.id,
-      iceParameters: transport.iceParameters,
-      iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters,
-    };
-    return transportParams;
-  }
-
-  @SubscribeMessage('transport-connect')
-  async handleConnectTransport(
-    @MessageBody() data: TransportConnectData,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { dtlsParameters, isConsumer } = data;
-    const roomId = this.socketRoomMap.get(client.id);
     try {
-      const transport = this.mediasoupService.getTransport(
-        isConsumer,
-        client.id,
-      );
-      await transport.connect({ dtlsParameters });
-      this.mediasoupService.setUserInRoom(roomId, client.id);
-    } catch (error) {
-      console.error(error);
-    }
-  }
+      const newRoom = await this.roomService.createRoom(roomId);
+      const sendTransportOptions =
+        await this.transportService.createWebRtcTransport(
+          roomId,
+          peerId,
+          'send',
+        );
 
-  @SubscribeMessage('transport-produce')
-  async handleProduceTransport(
-    @MessageBody() data: any,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { kind, rtpParameters, isConsumer, mediaTag } = data;
-    const transport = this.mediasoupService.getTransport(isConsumer, client.id);
-    const producer = await transport.produce({ kind, rtpParameters });
-    this.mediasoupService.setProducer(client.id, mediaTag, producer);
+      const recvTransportOptions =
+        await this.transportService.createWebRtcTransport(
+          roomId,
+          peerId,
+          'recv',
+        );
 
-    const roomId = this.socketRoomMap.get(client.id);
-    const existUserObj = this.mediasoupService.getExistProducers(
-      roomId,
-      client.id,
-    );
+      client.join(roomId); // Socket.io 룸에 참가
 
-    client.broadcast.to(roomId).emit('new-producer', {
-      produceSocket: client.id,
-      mediaTag,
-    });
+      // 방의 현재 참여자 목록 전송
+      const room = this.roomService.getRoom(roomId);
+      const peerIds = Array.from(room.peers.keys());
 
-    return { producerId: producer.id, existUserObj };
-  }
-
-  @SubscribeMessage('consume-all')
-  async handleConsumeAll(
-    @MessageBody() data: any,
-    @ConnectedSocket() client: Socket,
-  ) {
-    try {
-      const { rtpCapabilities, produceSocketId } = data;
-      const roomId = this.socketRoomMap.get(client.id);
-      const router = await this.mediasoupService.getRouter(roomId);
-      const transport = await this.mediasoupService.getTransport(
-        true,
-        client.id,
-        produceSocketId,
-      );
-      let paramsArray = [];
-      const producers = this.mediasoupService.getProducers(produceSocketId);
-      for (let mediaTag in producers) {
-        if (producers[mediaTag] !== undefined) {
-          if (
-            router.canConsume({
-              producerId: producers[mediaTag].id,
-              rtpCapabilities,
-            })
-          ) {
-            try {
-              const consumer = await transport.consume({
-                producerId: producers[mediaTag].id,
-                rtpCapabilities,
-                paused: true,
-              });
-              this.mediasoupService.setConsumer(
-                client.id,
-                produceSocketId,
-                mediaTag,
-                consumer,
-              );
-
-              const params = {
-                id: consumer.id,
-                producerId: producers[mediaTag].id,
-                produceSocketId: produceSocketId,
-                kind: consumer.kind,
-                rtpParameters: consumer.rtpParameters,
-              };
-
-              paramsArray.push({ params });
-            } catch (error) {
-              console.error('Error creating consumer: ', error);
-            }
+      // 기존 Producer들의 정보 수집
+      const existingProducers = [];
+      for (const [otherPeerId, peer] of room.peers) {
+        if (otherPeerId !== peerId) {
+          for (const producer of peer.producers.values()) {
+            existingProducers.push({
+              producerId: producer.producer.id,
+              peerId: otherPeerId,
+              kind: producer.producer.kind,
+            });
           }
         }
       }
-      return { paramsArray };
-    } catch (error) {}
+
+      client.emit('update-peer-list', { peerIds });
+
+      // 다른 클라이언트들에게 새로운 유저 알림
+      client.to(roomId).emit('new-peer', { peerId });
+
+      return {
+        sendTransportOptions,
+        recvTransportOptions,
+        rtpCapabilities: newRoom.router.router.rtpCapabilities,
+        peerIds,
+        existingProducers,
+      };
+    } catch (error) {
+      console.error(error);
+      client.emit('join-room-error', { error: error.message });
+    }
   }
 
-  @SubscribeMessage('consume-single')
-  async handleConsume(
-    @MessageBody() data: any,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { rtpCapabilities, produceSocketId, mediaTag } = data;
-    const roomId = this.socketRoomMap.get(client.id);
+  @SubscribeMessage('leave-room')
+  async handleLeaveRoom(@ConnectedSocket() client: Socket) {
+    const rooms = Array.from(client.rooms);
 
-    const router = await this.mediasoupService.getRouter(roomId);
-    const transport = this.mediasoupService.getTransport(
-      true,
-      client.id,
-      produceSocketId,
-    );
-    let paramsArray = [];
-    const producer = this.mediasoupService.getProducer(
-      produceSocketId,
-      mediaTag,
-    );
-
-    if (
-      router.canConsume({
-        producerId: producer.id,
-        rtpCapabilities,
-      })
-    ) {
-      try {
-        const consumer = await transport.consume({
-          producerId: producer.id,
-          rtpCapabilities,
-          paused: true,
-        });
-        this.mediasoupService.setConsumer(
-          client.id,
-          produceSocketId,
-          mediaTag,
-          consumer,
-        );
-
-        const params = {
-          id: consumer.id,
-          producerId: producer.id,
-          produceSocketId: produceSocketId,
-          kind: consumer.kind,
-          rtpParameters: consumer.rtpParameters,
-        };
-
-        paramsArray.push({ params });
-        return { paramsArray };
-      } catch (error) {
-        console.error(error);
+    for (const roomId of rooms) {
+      if (roomId !== client.id) {
+        const room = this.roomService.getRoom(roomId);
+        if (room) {
+          const peer = room.peers.get(client.id);
+          if (peer) {
+            // Close all producers
+            for (const producer of peer.producers.values()) {
+              producer.producer.close();
+            }
+            // Close all consumers
+            for (const consumer of peer.consumers.values()) {
+              consumer.consumer.close();
+            }
+            // Close all transports
+            for (const transport of peer.transports.values()) {
+              transport.transport.close();
+            }
+            room.peers.delete(client.id);
+          }
+          client.leave(roomId);
+          client.to(roomId).emit('peer-left', { peerId: client.id });
+          if (room.peers.size === 0) {
+            this.roomService.removeRoom(roomId);
+          }
+        }
       }
     }
+    return { left: true };
   }
 
-  @SubscribeMessage('new-video-producer')
-  async handleNewVideoProducer(
-    @MessageBody() data: any,
+  @SubscribeMessage('connect-transport')
+  async handleConnectTransport(
+    @MessageBody() data,
     @ConnectedSocket() client: Socket,
   ) {
-    const roomId = this.socketRoomMap.get(client.id);
-    const { mediaTag } = data;
-    client.broadcast
-      .to(roomId)
-      .emit('new-producer', { produceSocket: client.id, mediaTag });
-  }
-
-  @SubscribeMessage('recv-connect')
-  async handleRecvConnect(
-    @MessageBody() data: any,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { dtlsParameters, isConsumer, produceSocketId } = data;
-    const transport = this.mediasoupService.getTransport(
-      isConsumer,
-      client.id,
-      produceSocketId,
-    );
-    await transport.connect({ dtlsParameters });
-    console.log('recv transport connected');
-  }
-
-  @SubscribeMessage('consumer-resume')
-  async handleConsumerResume(
-    @MessageBody() data: any,
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { produceSocketId, mediaTag } = data;
-    console.log(client.id, produceSocketId, mediaTag);
-    const consumer = await this.mediasoupService.getConsumer(
-      client.id,
-      produceSocketId,
-      mediaTag,
-    );
-
-    await consumer.resume();
-  }
-
-  addSocketIdToRoom(roomId: string, socketId: string) {
-    if (!rooms[roomId]) {
-      rooms[roomId] = [];
+    const { roomId, peerId, dtlsParameters, transportId } = data;
+    const room = this.roomService.getRoom(roomId);
+    const peer = room?.peers.get(peerId);
+    if (!peer) {
+      return { error: 'Peer not found' };
     }
-    rooms[roomId].push(socketId);
+    const transportData = peer.transports.get(transportId);
+    if (!transportData) {
+      return { error: 'Transport not found' };
+    }
+    await transportData.transport.connect({ dtlsParameters });
+    console.log('>> transport connected');
+
+    return { connected: true };
   }
 
-  removeSocketIdFromRoom(roomId: string, socketId: string) {
-    if (!rooms[roomId]) {
-      return;
+  @SubscribeMessage('produce')
+  async handleProduce(@MessageBody() data, @ConnectedSocket() client: Socket) {
+    const { roomId, peerId, kind, transportId, rtpParameters } = data;
+
+    try {
+      const producerId = await this.producerConsumerService.createProducer({
+        roomId,
+        peerId,
+        transportId,
+        kind,
+        rtpParameters,
+      });
+
+      // 다른 클라이언트에게 새로운 Producer 알림
+      client.to(roomId).emit('new-producer', { producerId, peerId, kind });
+
+      return { producerId };
+    } catch (error) {
+      console.error(error);
+      client.emit('produce-error', { error: error.message });
     }
-    rooms[roomId] = rooms[roomId].filter((id) => id !== socketId);
-    if (rooms[roomId].length === 0) {
-      delete rooms[roomId];
+  }
+
+  @SubscribeMessage('consume')
+  async handleConsume(@MessageBody() data, @ConnectedSocket() client: Socket) {
+    const { roomId, peerId, producerId, rtpCapabilities, transportId } = data;
+    try {
+      const consumerData = await this.producerConsumerService.createConsumer({
+        roomId,
+        peerId,
+        transportId,
+        producerId,
+        rtpCapabilities,
+      });
+
+      return {
+        consumerData,
+      };
+    } catch (error) {
+      console.error(error);
+      client.emit('consume-error', { error: error.message });
     }
   }
 }

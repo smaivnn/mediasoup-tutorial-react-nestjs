@@ -4,4 +4,8 @@ export class JoinChannelDto {
   @IsNotEmpty()
   @IsString()
   roomId: string;
+
+  @IsNotEmpty()
+  @IsString()
+  peerId: string;
 }

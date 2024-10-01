@@ -3,8 +3,8 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { SignalingGateway } from './signaling/signaling.gateway';
-import { MediasoupService } from './mediasoup/mediasoup.service';
+import { MediasoupModule } from './mediasoup/mediasoup.module';
+import { SignalingModule } from './signaling/signaling.module';
 
 @Module({
   imports: [
@@ -12,8 +12,10 @@ import { MediasoupService } from './mediasoup/mediasoup.service';
       isGlobal: true,
     }),
     HttpModule,
+    MediasoupModule,
+    SignalingModule,
   ],
   controllers: [AppController],
-  providers: [AppService, SignalingGateway, MediasoupService],
+  providers: [AppService],
 })
 export class AppModule {}
