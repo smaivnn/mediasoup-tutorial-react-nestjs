@@ -143,3 +143,9 @@ npm run start:dev
 6. **Open your browser and navigate to** https://localhost:3000
 
    Now you should have both the client and server running, and you can start using the mediasoup example.
+
+# Additional Resources
+
+- Mediasoup Homepage: https://mediasoup.org/
+- Mediasoup Forum: https://mediasoup.discourse.group/
+- My blog: https://smaivnn.tistory.com/28
