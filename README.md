@@ -7,7 +7,8 @@ https://smaivnn.tistory.com/28
 
 # screenshot
 
-실행 사진
+<img width="539" alt="mediasoup demo" src="https://github.com/user-attachments/assets/0e4672a2-63fa-4419-8482-3c23760bdb86">
+
 
 # structure
 
@@ -84,6 +85,7 @@ A Consumer is an entity that receives real-time media streams. It can receive au
 The Consumer represents the media stream sent from the server to the client, subscribing to other participants' Producers to receive media. It obtains the Producer's media from the server's Router, delivers it to the client, and the client can play other participants' media through the Consumer.
 
 # Flow
+![image](https://github.com/user-attachments/assets/96998b4e-62bc-404c-8d49-601de9ac7354)
 
 # How to Run
 
